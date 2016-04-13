@@ -6,7 +6,7 @@ Schematic:
 
 ![alt tag](https://github.com/vad7/nrf24l01_esp8266/blob/master/nRF24L01.jpg)
 
-[nRF24L01 doc](https://github.com/vad7/nrf24l01_esp8266.git/blob/master/nRF24L01P_Product_Specification_1_0.pdf) 
+[nRF24L01 doc](https://github.com/vad7/nrf24l01_esp8266/blob/master/nRF24L01P_Product_Specification_1_0.pdf) 
 
 Размер передачи (NRF24_PAYLOAD_LEN) и длина адреса (NRF24_ADDRESS_LEN) устанавливается при инициализации
 
