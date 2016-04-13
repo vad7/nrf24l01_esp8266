@@ -1,7 +1,10 @@
 /*
 * The MIT License (MIT)
 * 
-* Copyright (c) 2015 David Ogilvy (MetalPhreak)
+* spi_write_read_block(), spi_write_read_byte()
+* and other improvements written by Vadim Kulakov, 2016
+*
+* spi_transaction() written by David Ogilvy (MetalPhreak), 2015
 * 
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -22,30 +25,53 @@
 * SOFTWARE.
 */
 
-
+#include "hw/pin_mux_register.h"
 #include "driver/spi.h"
+#include "sdk/rom2ram.h"
 
+//#if DEBUGSOO > 4
+//#include "web_utils.h"
+//#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Function Name: spi_init
 //   Description: Wrapper to setup HSPI/SPI GPIO pins and default SPI clock
-//    Parameters: spi_no - SPI (0) or HSPI (1)
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_init(uint8 spi_no){
+void spi_init(void){
 	
-	if(spi_no > 1) return; //Only SPI and HSPI are valid spi modules. 
+	spi_init_gpio(SPI_CLK_80MHZ_NODIV);
+	spi_clock(SPI_CLK_PREDIV, SPI_CLK_CNTDIV);
+#ifndef SPI_TINY
+#ifndef SPI_BLOCK
+	spi_tx_byte_order(SPI_BYTE_ORDER_HIGH_TO_LOW);
+	spi_rx_byte_order(SPI_BYTE_ORDER_HIGH_TO_LOW);
+#endif
+#endif
 
-	spi_init_gpio(spi_no, SPI_CLK_USE_DIV);
-	spi_clock(spi_no, SPI_CLK_PREDIV, SPI_CLK_CNTDIV);
-	spi_tx_byte_order(spi_no, SPI_BYTE_ORDER_HIGH_TO_LOW);
-	spi_rx_byte_order(spi_no, SPI_BYTE_ORDER_HIGH_TO_LOW); 
-
-	SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_CS_SETUP|SPI_CS_HOLD);
+#if SPI_NOT_USE_CS == 0 && DELAY_BEFORE_CHANGE_CS
+	SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_CS_SETUP|SPI_CS_HOLD); // set delay before and after CS change
+#endif
 	CLEAR_PERI_REG_MASK(SPI_USER(spi_no), SPI_FLASH_MODE);
+#ifdef SPI_TINY
+#ifndef SPI_BLOCK
+	//disable MOSI, MISO, ADDR, COMMAND, DUMMY, etc in case previously set.
+	CLEAR_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI|SPI_USR_MISO|SPI_USR_COMMAND|SPI_USR_ADDR|SPI_USR_DUMMY|SPI_WR_BYTE_ORDER|SPI_RD_BYTE_ORDER);
 
+	//########## Setup Bitlengths ##########//
+	WRITE_PERI_REG(SPI_USER1(spi_no), ((0-1)&SPI_USR_ADDR_BITLEN)<<SPI_USR_ADDR_BITLEN_S | //Number of bits in Address
+									  ((8-1)&SPI_USR_MOSI_BITLEN)<<SPI_USR_MOSI_BITLEN_S | //Number of bits to Send = 8
+									  ((0-1)&SPI_USR_MISO_BITLEN)<<SPI_USR_MISO_BITLEN_S |  //Number of bits to receive
+									  ((0-1)&SPI_USR_DUMMY_CYCLELEN)<<SPI_USR_DUMMY_CYCLELEN_S); //Number of Dummy bits to insert
+	//########## END SECTION ##########//
+
+	//########## Setup DOUT data ##########//
+	//enable MOSI function in SPI module, full-duplex mode
+	SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI | SPI_DOUTDIN);
+#endif
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,7 +80,7 @@ void spi_init(uint8 spi_no){
 //
 // Function Name: spi_mode
 //   Description: Configures SPI mode parameters for clock edge and clock polarity.
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//    Parameters:
 //				  spi_cpha - (0) Data is valid on clock leading (rising) edge
 //				             (1) Data is valid on clock trailing (falling) edge
 //				  spi_cpol - (0) Clock is low when inactive
@@ -62,7 +88,7 @@ void spi_init(uint8 spi_no){
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_mode(uint8 spi_no, uint8 spi_cpha,uint8 spi_cpol){
+void spi_mode(uint8 spi_cpha,uint8 spi_cpol){
 	if(spi_cpha) {
 		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_CK_OUT_EDGE);
 	} else {
@@ -83,7 +109,7 @@ void spi_mode(uint8 spi_no, uint8 spi_cpha,uint8 spi_cpol){
 //
 // Function Name: spi_init_gpio
 //   Description: Initialises the GPIO pins for use as SPI pins.
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//    Parameters:
 //				  sysclk_as_spiclk - SPI_CLK_80MHZ_NODIV (1) if using 80MHz
 //									 sysclock for SPI clock. 
 //									 SPI_CLK_USE_DIV (0) if using divider to
@@ -91,7 +117,7 @@ void spi_mode(uint8 spi_no, uint8 spi_cpha,uint8 spi_cpol){
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_init_gpio(uint8 spi_no, uint8 sysclk_as_spiclk){
+void spi_init_gpio(uint8 sysclk_as_spiclk){
 
 //	if(spi_no > 1) return; //Not required. Valid spi_no is checked with if/elif below.
 
@@ -104,14 +130,18 @@ void spi_init_gpio(uint8 spi_no, uint8 sysclk_as_spiclk){
 		WRITE_PERI_REG(PERIPHS_IO_MUX, 0x005|(clock_div_flag<<8)); //Set bit 8 if 80MHz sysclock required
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_CLK_U, 1);
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_CMD_U, 1);
-		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA0_U, 1);	
-		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA1_U, 1);	
+		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA0_U, 1);
+#if SPI_NOT_USE_CS == 0
+		PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA1_U, 1);
+#endif
 	}else if(spi_no==HSPI){
 		WRITE_PERI_REG(PERIPHS_IO_MUX, 0x105|(clock_div_flag<<9)); //Set bit 9 if 80MHz sysclock required
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, 2); //GPIO12 is HSPI MISO pin (Master Data In)
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U, 2); //GPIO13 is HSPI MOSI pin (Master Data Out)
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, 2); //GPIO14 is HSPI CLK pin (Clock)
+#if SPI_NOT_USE_CS == 0
 		PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U, 2); //GPIO15 is HSPI CS pin (Chip Select / Slave Select)
+#endif
 	}
 
 }
@@ -121,15 +151,15 @@ void spi_init_gpio(uint8 spi_no, uint8 sysclk_as_spiclk){
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Function Name: spi_clock
-//   Description: sets up the control registers for the SPI clock
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//   Description: sets up the control registers for the SPI clock (when sysclk_as_spiclk = 0)
+//    Parameters:
 //				  prediv - predivider value (actual division value)
 //				  cntdiv - postdivider value (actual division value)
 //				  Set either divider to 0 to disable all division (80MHz sysclock)
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_clock(uint8 spi_no, uint16 prediv, uint8 cntdiv){
+void spi_clock(uint16 prediv, uint8 cntdiv){
 	
 	if(spi_no > 1) return;
 
@@ -150,11 +180,102 @@ void spi_clock(uint8 spi_no, uint16 prediv, uint8 cntdiv){
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef SPI_BLOCK
+
+// Send (sr & SPI_SEND), Read (sr & SPI_RECEIVE): 8 bit command + data(max 64 bytes), HSPI
+// if SPI_SEND + SPI_RECEIVE = full-duplex (addr ignored)
+void ICACHE_FLASH_ATTR spi_write_read_block(uint8 sr, uint8 addr, uint8 * data, uint8 data_size)
+{
+	while(spi_busy(spi_no)); //wait for SPI to be ready
+
+	CLEAR_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI|SPI_USR_MISO|SPI_USR_COMMAND|SPI_USR_ADDR|SPI_USR_DUMMY|SPI_WR_BYTE_ORDER|SPI_RD_BYTE_ORDER);
+
+	//########## Setup Bit-lengths ##########//
+	uint32 d = ((8-1)&SPI_USR_ADDR_BITLEN)<<SPI_USR_ADDR_BITLEN_S; // Number of bits in Address
+	if(sr & SPI_SEND) { // send
+		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI | (sr & SPI_RECEIVE ? SPI_DOUTDIN : 0)); // +receive full-duplex if set
+		d |= ((data_size*8-1)&SPI_USR_MOSI_BITLEN)<<SPI_USR_MOSI_BITLEN_S; // Number of bits to Send
+		copy_s1d4((void *)SPI_W0(spi_no), data, data_size);
+	} else {
+		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MISO);
+		d |= ((data_size*8-1)&SPI_USR_MISO_BITLEN)<<SPI_USR_MISO_BITLEN_S; // Number of bits to receive
+	}
+	WRITE_PERI_REG(SPI_USER1(spi_no), d);
+
+	if(sr != SPI_SEND + SPI_RECEIVE) {
+		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_ADDR); //enable ADDRess function in SPI module
+		WRITE_PERI_REG(SPI_ADDR(spi_no), addr<<(32-8)); //align address data to high bits
+	}
+
+	//########## Begin SPI Transaction ##########//
+	SET_PERI_REG_MASK(SPI_CMD(spi_no), SPI_USR);
+
+	while(spi_busy(spi_no));	//wait for SPI transaction to complete
+
+	if(sr & SPI_RECEIVE) { // receive
+		copy_s4d1(data, (void *)SPI_W0(spi_no), data_size);
+//		#if DEBUGSOO > 4
+//			os_printf("SPI_R: ");
+//			print_hex_dump(data, data_size, ' ');
+//			os_printf("\n");
+//		#endif
+	}
+
+}
+#endif
+
+#ifdef SPI_TINY
+
+// Write & Read 8 bit in full duplex, HSPI
+uint8 ICACHE_FLASH_ATTR spi_write_read_byte(uint8 dout_data)
+{
+
+	while(spi_busy(spi_no)); //wait for SPI to be ready
+
+#ifdef SPI_BLOCK
+	CLEAR_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI|SPI_USR_MISO|SPI_USR_COMMAND|SPI_USR_ADDR|SPI_USR_DUMMY|SPI_WR_BYTE_ORDER|SPI_RD_BYTE_ORDER);
+
+	//########## Setup Bitlengths ##########//
+	WRITE_PERI_REG(SPI_USER1(spi_no), ((0-1)&SPI_USR_ADDR_BITLEN)<<SPI_USR_ADDR_BITLEN_S | //Number of bits in Address
+									  ((8-1)&SPI_USR_MOSI_BITLEN)<<SPI_USR_MOSI_BITLEN_S | //Number of bits to Send = 8
+									  ((0-1)&SPI_USR_MISO_BITLEN)<<SPI_USR_MISO_BITLEN_S |  //Number of bits to receive
+									  ((0-1)&SPI_USR_DUMMY_CYCLELEN)<<SPI_USR_DUMMY_CYCLELEN_S); //Number of Dummy bits to insert
+	//########## END SECTION ##########//
+
+	//########## Setup DOUT data ##########//
+	//enable MOSI function in SPI module, full-duplex mode
+	SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_MOSI | SPI_DOUTDIN);
+#endif
+
+	//copy data to W0
+	WRITE_PERI_REG(SPI_W0(spi_no), dout_data); // 8 bits out
+	//########## END SECTION ##########//
+
+	//########## Begin SPI Transaction ##########//
+	SET_PERI_REG_MASK(SPI_CMD(spi_no), SPI_USR);
+	//########## END SECTION ##########//
+
+	//########## Return DIN data ##########//
+	while(spi_busy(spi_no));	//wait for SPI transaction to complete
+
+#if DEBUGSOO > 4
+	uint8 i = READ_PERI_REG(SPI_W0(spi_no)); // 8 bits.
+	os_printf(" SPI: %x/%x ", dout_data, i);
+	return i;
+#else
+	return READ_PERI_REG(SPI_W0(spi_no)); // 8 bits.
+#endif
+}
+
+#endif
+#ifndef SPI_TINY
+#ifndef SPI_BLOCK
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Function Name: spi_tx_byte_order
 //   Description: Setup the byte order for shifting data out of buffer
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//    Parameters:
 //				  byte_order - SPI_BYTE_ORDER_HIGH_TO_LOW (1) 
 //							   Data is sent out starting with Bit31 and down to Bit0
 //
@@ -168,9 +289,7 @@ void spi_clock(uint8 spi_no, uint16 prediv, uint8 cntdiv){
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_tx_byte_order(uint8 spi_no, uint8 byte_order){
-
-	if(spi_no > 1) return;
+void spi_tx_byte_order(uint8 byte_order){
 
 	if(byte_order){
 		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_WR_BYTE_ORDER);
@@ -184,7 +303,7 @@ void spi_tx_byte_order(uint8 spi_no, uint8 byte_order){
 //
 // Function Name: spi_rx_byte_order
 //   Description: Setup the byte order for shifting data into buffer
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//    Parameters:
 //				  byte_order - SPI_BYTE_ORDER_HIGH_TO_LOW (1) 
 //							   Data is read in starting with Bit31 and down to Bit0
 //
@@ -198,10 +317,8 @@ void spi_tx_byte_order(uint8 spi_no, uint8 byte_order){
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void spi_rx_byte_order(uint8 spi_no, uint8 byte_order){
-
-	if(spi_no > 1) return;
-
+void spi_rx_byte_order(uint8 spi_no, uint8 byte_order)
+{
 	if(byte_order){
 		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_RD_BYTE_ORDER);
 	} else {
@@ -214,7 +331,7 @@ void spi_rx_byte_order(uint8 spi_no, uint8 byte_order){
 //
 // Function Name: spi_transaction
 //   Description: SPI transaction function
-//    Parameters: spi_no - SPI (0) or HSPI (1)
+//    Parameters:
 //				  cmd_bits - actual number of bits to transmit
 //				  cmd_data - command data
 //				  addr_bits - actual number of bits to transmit
@@ -231,10 +348,9 @@ void spi_rx_byte_order(uint8 spi_no, uint8 byte_order){
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-uint32 spi_transaction(uint8 spi_no, uint8 cmd_bits, uint16 cmd_data, uint32 addr_bits, uint32 addr_data, uint32 dout_bits, uint32 dout_data,
-				uint32 din_bits, uint32 dummy_bits){
-
-	if(spi_no > 1) return 0;  //Check for a valid SPI 
+uint32 spi_transaction(uint8 cmd_bits, uint16 cmd_data, uint32 addr_bits, uint32 addr_data, uint32 dout_bits, uint32 dout_data,
+				uint32 din_bits, uint32 dummy_bits)
+{
 
 	//code for custom Chip Select as GPIO PIN here
 
@@ -265,7 +381,7 @@ uint32 spi_transaction(uint8 spi_no, uint8 cmd_bits, uint16 cmd_data, uint32 add
 		SET_PERI_REG_MASK(SPI_USER(spi_no), SPI_USR_COMMAND); //enable COMMAND function in SPI module
 		uint16 command = cmd_data << (16-cmd_bits); //align command data to high bits
 		command = ((command>>8)&0xff) | ((command<<8)&0xff00); //swap byte order
-		WRITE_PERI_REG(SPI_USER2(spi_no), ((((cmd_bits-1)&SPI_USR_COMMAND_BITLEN)<<SPI_USR_COMMAND_BITLEN_S) | command&SPI_USR_COMMAND_VALUE));	
+		WRITE_PERI_REG(SPI_USER2(spi_no), ((((cmd_bits-1)&SPI_USR_COMMAND_BITLEN)<<SPI_USR_COMMAND_BITLEN_S) | (command&SPI_USR_COMMAND_VALUE)));
 	}
 //########## END SECTION ##########//
 
@@ -294,7 +410,7 @@ uint32 spi_transaction(uint8 spi_no, uint8 cmd_bits, uint16 cmd_data, uint32 add
 			//for example, 0xDA4 12 bits without SPI_WR_BYTE_ORDER would usually be output as if it were 0x0DA4, 
 			//of which 0xA4, and then 0x0 would be shifted out (first 8 bits of low byte, then 4 MSB bits of high byte - ie reverse byte order). 
 			//The code below shifts it out as 0xA4 followed by 0xD as you might require. 
-			WRITE_PERI_REG(SPI_W0(spi_no), ((0xFFFFFFFF<<(dout_bits - dout_extra_bits)&dout_data)<<(8-dout_extra_bits) | (0xFFFFFFFF>>(32-(dout_bits - dout_extra_bits)))&dout_data));
+			WRITE_PERI_REG(SPI_W0(spi_no), ((0xFFFFFFFF<<(dout_bits - dout_extra_bits)&dout_data)<<(8-dout_extra_bits) | ((0xFFFFFFFF>>(32-(dout_bits - dout_extra_bits)))&dout_data)));
 		} else {
 			WRITE_PERI_REG(SPI_W0(spi_no), dout_data);
 		}
@@ -319,25 +435,12 @@ uint32 spi_transaction(uint8 spi_no, uint8 cmd_bits, uint16 cmd_data, uint32 add
 		return 0; //something went wrong
 	}
 //########## END SECTION ##########//
-
+	while(spi_busy(spi_no)); //prevents GPIO pin state change while SPI operation is in process
 	//Transaction completed
 	return 1; //success
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/*///////////////////////////////////////////////////////////////////////////////
-//
-// Function Name: func
-//   Description: 
-//    Parameters: 
-//				 
-////////////////////////////////////////////////////////////////////////////////
-
-void func(params){
-
-}
-
-///////////////////////////////////////////////////////////////////////////////*/
-
-
+#endif
+#endif

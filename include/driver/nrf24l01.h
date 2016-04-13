@@ -1,29 +1,10 @@
 /*
  * nRF24L01.c
  *
- * Created: 01.11.2013 15:09:29
- *  Author: Vadim Kulakov, vad7 @ yahoo.com
+ * Created: 01.11.2013 15:09:29, updated for esp8266: 04.2016
+ * Written by Vadim Kulakov, vad7 @ yahoo.com
  */ 
-#define NRF24_PORT				PORTA
-#define NRF24_DDR				DDRA
-#define NRF24_IN				PINA
-#define NRF24_CE				(1<<PORTA2)
-#define NRF24_SET_CE_HI			NRF24_PORT |= NRF24_CE
-#define NRF24_SET_CE_LOW		NRF24_PORT &= ~NRF24_CE
-#define NRF24_CSN				(1<<PORTA3)
-#define NRF24_SET_CSN_HI		NRF24_PORT |= NRF24_CSN
-#define NRF24_SET_CSN_LOW		NRF24_PORT &= ~NRF24_CSN
-#define NRF24_SCK				(1<<PORTA4)
-#define NRF24_MOSI				(1<<PORTA5) // USI DO
-#define NRF24_MISO				(1<<PORTA6) // USI DI
-//#define NRF24_IRQ				(1<<PORTA1)
-
-#define NRF24_RF_CHANNEL		2 // default
-#define NRF24_ADDRESS_LEN		3 // 3..5 bytes
-#define NRF24_PAYLOAD_LEN		4 // MUST be EQUAL or GREATER than Address field width!!
-#define NRF24_CONFIG			(1<<NRF24_BIT_EN_CRC) | (1<<NRF24_BIT_CRCO) // Enable CRC, CRC 2 bytes, IRQ disabled
-
-uint8_t NRF24_Buffer[NRF24_PAYLOAD_LEN]; // MUST be EQUAL or GREATER than Address field width!!! 
+#include "hw/esp8266.h"
 
 /* Register map table */
 #define NRF24_REG_CONFIG		0x00
@@ -100,27 +81,38 @@ uint8_t NRF24_Buffer[NRF24_PAYLOAD_LEN]; // MUST be EQUAL or GREATER than Addres
 #define NRF24_ReceiveMode			(1<<NRF24_BIT_PRIM_RX)
 #define NRF24_TransmitMode			0
 
-uint8_t NRF24_INIT_DATA[] = {
-//	NRF24_CMD_W_REGISTER | NRF24_REG_FEATURE,	(0<<NRF24_BIT_EN_DPL) | (0<<NRF24_BIT_EN_ACK_PAY), // Dynamic Payload Length, Enables Payload with ACK
-//	NRF24_CMD_W_REGISTER | NRF24_REG_DYNPD,		0b000000, // Dynamic payload
-//	NRF24_CMD_W_REGISTER | NRF24_REG_RF_CH,		NRF24_RF_CHANNEL, // RF channel
-	NRF24_CMD_W_REGISTER | NRF24_REG_SETUP_AW,	NRF24_ADDRESS_LEN - 2, // address length
-	NRF24_CMD_W_REGISTER | NRF24_REG_SETUP_RETR,(0b0100<<NRF24_BIT_ARD) | (0b1111<<NRF24_BIT_ARC), // Auto Retransmit Delay = 1000uS, 15 Re-Transmit on fail
-	NRF24_CMD_W_REGISTER | NRF24_REG_RF_SETUP,	(0<<NRF24_BIT_RF_DR_LOW) | (0<<NRF24_BIT_RF_DR_HIGH) | 0b111, // Data rate: 1Mbps, Max power (0b111)
-	NRF24_CMD_W_REGISTER | NRF24_REG_EN_AA,		0b000001, // Enable �Auto Acknowledgment� for pipes 0, 1
-	NRF24_CMD_W_REGISTER | NRF24_REG_EN_RXADDR,	0b000001, // Enable data pipes: 0, 1
-	NRF24_CMD_W_REGISTER | NRF24_REG_RX_PW_P0,	NRF24_PAYLOAD_LEN
-};
-uint8_t NRF24_BASE_ADDR[] PROGMEM = { 0xC8, 0xC8 }; // Address MSBs: 2..3
+typedef enum
+{
+	NRF24_Transmitting = 0,
+	NRF24_Transmit_Ok,
+	NRF24_Transmit_Error,
+	NRF24_Transmit_Timeout,
+} NRF25_TRANSMIT_STATUS;
+
+uint8_t		NRF24_transmit_cnt;
+volatile uint8_t NRF24_transmit_status; // 1 - ok, 2 - max retransmit count reached, 3 - module is not responses.
+
+#ifdef SPI_BLOCK
+
+uint8_t NRF24_SendCommand(uint8_t cmd) ICACHE_FLASH_ATTR; // Send command & receive status
+void NRF24_WriteByte(uint8_t cmd, uint8_t value) ICACHE_FLASH_ATTR;
+#define NRF24_ReadArray(cmd, array, len) spi_write_read_block(SPI_RECEIVE, cmd, array, len)
+#define NRF24_WriteArray(cmd, array, len) spi_write_read_block(SPI_SEND, cmd, array, len)
+
+
+#else
 
 uint8_t NRF24_ReadRegister(uint8_t reg) ICACHE_FLASH_ATTR;
 void NRF24_ReadArray(uint8_t cmd, uint8_t *array, uint8_t len) ICACHE_FLASH_ATTR;
 void NRF24_WriteByte(uint8_t cmd, uint8_t value) ICACHE_FLASH_ATTR;
 void NRF24_WriteArray(int8_t cmd, uint8_t *array, uint8_t len) ICACHE_FLASH_ATTR;
 uint8_t NRF24_SendCommand(uint8_t cmd) ICACHE_FLASH_ATTR; // Send command & receive status
+
+#endif
+
 void NRF24_SetMode(uint8_t mode) ICACHE_FLASH_ATTR; // Set mode in CONFIG reg
 uint8_t NRF24_Receive(uint8_t *payload) ICACHE_FLASH_ATTR; // Receive in payload, return data pipe number + 1 if success
-uint8_t NRF24_Transmit(uint8_t *payload) ICACHE_FLASH_ATTR; // Transmit payload, return 0 if success, 1 - max retransmit count reached, 2 - module not response.
+void NRF24_Transmit(uint8_t *payload) ICACHE_FLASH_ATTR; // Transmit payload, return 0 if success, 1 - max retransmit count reached, 2 - module not response.
 uint8_t NRF24_SetAddresses(uint8_t addr_LSB) ICACHE_FLASH_ATTR; // Set addresses: NRF24_BASE_ADDR + addr_LSB, return 1 if success
 void NRF24_Powerdown(void) ICACHE_FLASH_ATTR;
-void NRF24_init(uint8_t channel) ICACHE_FLASH_ATTR; // After init transmit must be delayed
+void NRF24_init(void) ICACHE_FLASH_ATTR; // After init transmit must be delayed
