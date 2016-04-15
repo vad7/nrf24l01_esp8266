@@ -29,9 +29,9 @@
 #include "driver/spi.h"
 #include "sdk/rom2ram.h"
 
-//#if DEBUGSOO > 4
-//#include "web_utils.h"
-//#endif
+#if DEBUGSOO > 4
+#include "web_utils.h"
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -214,11 +214,11 @@ void ICACHE_FLASH_ATTR spi_write_read_block(uint8 sr, uint8 addr, uint8 * data, 
 
 	if(sr & SPI_RECEIVE) { // receive
 		copy_s4d1(data, (void *)SPI_W0(spi_no), data_size);
-//		#if DEBUGSOO > 4
-//			os_printf("SPI_R: ");
-//			print_hex_dump(data, data_size, ' ');
-//			os_printf("\n");
-//		#endif
+		#if DEBUGSOO > 4
+			os_printf("SPI_R: ");
+			print_hex_dump(data, data_size, ' ');
+			os_printf("\n");
+		#endif
 	}
 
 }

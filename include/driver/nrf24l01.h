@@ -89,7 +89,7 @@ typedef enum
 	NRF24_Transmit_Timeout,
 } NRF25_TRANSMIT_STATUS;
 
-uint8_t		NRF24_transmit_cnt;
+uint16_t		NRF24_transmit_cnt;
 volatile uint8_t NRF24_transmit_status; // 1 - ok, 2 - max retransmit count reached, 3 - module is not responses.
 
 #ifdef SPI_BLOCK

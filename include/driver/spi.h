@@ -51,7 +51,7 @@
 
 #define SPI_NOT_USE_CS			0	// 1 - CS pin is not used by hardware
 #define SPI_CLK_80MHZ_NODIV 	0	// 1 - full 80Mhz clock
-#define DELAY_BEFORE_CHANGE_CS	0 	// set delay before and after CS change
+#define DELAY_BEFORE_CHANGE_CS	1 	// set delay before and after CS change
 
 #define SPI_BYTE_ORDER_HIGH_TO_LOW 0
 #define SPI_BYTE_ORDER_LOW_TO_HIGH 0
@@ -61,9 +61,9 @@
 #endif
 
 //Define some default SPI clock settings
-#define SPI_CLK_PREDIV 20
+#define SPI_CLK_PREDIV 10
 #define SPI_CLK_CNTDIV 2
-#define SPI_CLK_FREQ CPU_CLK_FREQ/(SPI_CLK_PREDIV*SPI_CLK_CNTDIV) // 80 / 40 = 2 MHz
+#define SPI_CLK_FREQ CPU_CLK_FREQ/(SPI_CLK_PREDIV*SPI_CLK_CNTDIV) // 80 / 20 = 4 MHz
 
 void spi_init(void) ICACHE_FLASH_ATTR;
 void spi_mode(uint8 spi_cpha,uint8 spi_cpol) ICACHE_FLASH_ATTR;
