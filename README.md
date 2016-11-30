@@ -4,8 +4,12 @@
 Used two mode: SPI and SPI OVERLAP.
 
 Примеры: 
-[example, HSPI]([http://vad-7.blogspot.ru/2016/04/esp8266.html])
-[example, SPI OVERLAP]([http://vad-7.blogspot.ru/2016/11/aeropac-sn-co2-az-7798-uart.html])
+
+[example HSPI](http://vad-7.blogspot.ru/2016/04/esp8266.html)
+
+[example SPI OVERLAP](http://vad-7.blogspot.ru/2016/11/aeropac-sn-co2-az-7798-uart.html)
+
+
 
 Schematic HSPI: 
 ![SCH](https://github.com/vad7/nrf24l01_esp8266/blob/master/esp8266-nrf24l01.jpg)
