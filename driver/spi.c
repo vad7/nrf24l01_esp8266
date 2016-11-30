@@ -27,7 +27,7 @@
 #include "user_config.h"
 #ifdef USE_HSPI
 #include "hw/pin_mux_register.h"
-#include "driver/spi.h"
+#include "../include/driver/spi.h"
 #include "sdk/rom2ram.h"
 #include "hw/esp8266.h"
 
@@ -45,7 +45,8 @@
 //				 
 ////////////////////////////////////////////////////////////////////////////////
 
-void ICACHE_FLASH_ATTR spi_init(void){
+// SPI clock - freq (kHz). if freq is more than (USE_FIX_QSPI_FLASH / 2) than spi clock equal USE_FIX_QSPI_FLASH
+void ICACHE_FLASH_ATTR spi_init(uint32 freq){
 
 	WAIT_HSPI_IDLE();
 #ifdef SPI_OVERLAP
@@ -91,7 +92,7 @@ void ICACHE_FLASH_ATTR spi_init(void){
 #endif
 #endif
 
-	spi_clock(SPI_CLK_PREDIV, SPI_CLK_CNTDIV);
+	spi_clock(ets_get_cpu_frequency() * (1000/2) / freq, 2);
 
 #ifndef SPI_TINY
 #ifndef SPI_BLOCK

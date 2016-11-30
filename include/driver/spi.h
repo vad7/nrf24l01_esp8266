@@ -61,8 +61,8 @@
 
 //Define some default SPI clock settings,
 //SPI_CLK_FREQ = CPU_CLK_FREQ/(SPI_CLK_PREDIV*SPI_CLK_CNTDIV)
-#define SPI_CLK_PREDIV 1
-#define SPI_CLK_CNTDIV 2
+//#define SPI_CLK_PREDIV 1
+//#define SPI_CLK_CNTDIV 2
 
 #ifdef SPI_OVERLAP
 	#if USE_FIX_QSPI_FLASH == 80 && SPI_CLK_80MHZ_NODIV == 0
@@ -70,7 +70,7 @@
 	#endif
 #endif
 
-void spi_init(void) ICACHE_FLASH_ATTR;
+void spi_init(uint32 freq) ICACHE_FLASH_ATTR;
 void spi_clock(uint16 prediv, uint8 cntdiv) ICACHE_FLASH_ATTR;
 //void spi_mode(uint8 spi_cpha,uint8 spi_cpol) ICACHE_FLASH_ATTR;
 
@@ -78,7 +78,7 @@ void spi_clock(uint16 prediv, uint8 cntdiv) ICACHE_FLASH_ATTR;
 
 #define SPI_SEND 		1
 #define SPI_RECEIVE 	2
-#define SPI_ADDR_BITS 	(8 + 16) // opcode + address
+#define SPI_ADDR_BITS 	(8) // opcode + address
 
 void spi_write_read_block(uint8 sr, uint32 addr, uint8 * data, uint8 data_size);
 

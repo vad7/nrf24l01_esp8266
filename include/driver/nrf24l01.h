@@ -6,7 +6,7 @@
  */ 
 #include "hw/esp8266.h"
 
-#define NRF24_CE_GPIO			4		// if omitted - assume that CS always HI level(1)
+#define NRF24_CE_GPIO			5		// if omitted - assume that CS always HI level(1)
 //#define NRF24_CSN_GPIO			15 // if omitted - hardware CS
 #define NRF24_SET_CE_HI			GPIO_OUT_W1TS = (1<<NRF24_CE_GPIO)  // Start transmit
 #define NRF24_SET_CE_LOW		GPIO_OUT_W1TC = (1<<NRF24_CE_GPIO)
@@ -20,7 +20,8 @@
 
 //#define NRF24_RF_CHANNEL		2 // default
 #define NRF24_ADDRESS_LEN		3 // 3..5 bytes
-#define NRF24_PAYLOAD_LEN		4 // MUST be EQUAL or GREATER than Address field width!!
+#define NRF24_PAYLOAD_LEN		32 // = Max data size - MUST be EQUAL or GREATER than Address field width!!
+#define NRF24_USE_DYNAMIC_PAYLOAD
 
 /* Register map table */
 #define NRF24_REG_CONFIG		0x00
@@ -68,7 +69,7 @@
 #define NRF24_BIT_TX_DS			5
 #define NRF24_BIT_MAX_RT		4
 #define NRF24_BIT_RX_P_NO		1
-#define NRF24_BIT_F_TX_FULL		0
+#define NRF24_BIT_ST_TX_FULL	0
 #define NRF24_BIT_PLOS_CNT		4
 #define NRF24_BIT_ARC_CNT		0
 #define NRF24_BIT_TX_REUSE		6
@@ -96,8 +97,9 @@
 
 #define NRF24_ReceiveMode			(1<<NRF24_BIT_PRIM_RX)
 #define NRF24_TransmitMode			0
+#define NRF24_RX_FIFO_EMPTY			0b111
 
-// Enable CRC, CRC 2 bytes, IRQ disabled
+// Enable CRC, CRC 2 bytes, IRQs disabled
 #define NRF24_CONFIG	(1<<NRF24_BIT_EN_CRC) | (1<<NRF24_BIT_CRCO) | (1<<NRF24_BIT_MASK_RX_DR)|(1<<NRF24_BIT_MASK_TX_DS)|(1<<NRF24_BIT_MASK_MAX_RT)
 
 typedef enum
@@ -110,6 +112,7 @@ typedef enum
 
 uint16_t		NRF24_transmit_cnt;
 volatile uint8_t NRF24_transmit_status; // 1 - ok, 2 - max retransmit count reached, 3 - module is not responses.
+extern uint8_t NRF24_Buffer[NRF24_PAYLOAD_LEN];
 
 #ifdef SPI_BLOCK
 
@@ -132,7 +135,8 @@ uint8_t NRF24_SendCommand(uint8_t cmd) ICACHE_FLASH_ATTR; // Send command & rece
 void NRF24_SetMode(uint8_t mode) ICACHE_FLASH_ATTR; // Set mode in CONFIG reg
 uint8_t NRF24_Receive(uint8_t *payload) ICACHE_FLASH_ATTR; // Receive in payload, return data pipe number + 1 if success
 void NRF24_Transmit(uint8_t *payload) ICACHE_FLASH_ATTR; // Transmit payload, return 0 if success, 1 - max retransmit count reached, 2 - module not response.
-uint8_t NRF24_SetAddresses(uint8_t addr_LSB) ICACHE_FLASH_ATTR; // Set addresses: NRF24_BASE_ADDR + addr_LSB, return 1 if success
+uint8_t NRF24_SetTXAddress(uint8_t addr_LSB) ICACHE_FLASH_ATTR; // NRF24_BASE_ADDR + addr_LSB, return 1 if success
+uint8_t NRF24_SetRXAddress(uint8_t pipe, uint8_t addr_LSB) ICACHE_FLASH_ATTR; // NRF24_BASE_ADDR + addr_LSB, return 1 if success
 void NRF24_init(void) ICACHE_FLASH_ATTR; // After init transmit must be delayed
 #define NRF24_Standby() NRF24_SET_CE_LOW
 //void NRF24_Powerdown(void) ICACHE_FLASH_ATTR;

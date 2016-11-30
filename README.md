@@ -1,8 +1,18 @@
 # Esp8266 HSPI driver for nRF24L01
 ---
 
-Schematic: 
+Used two mode: SPI and SPI OVERLAP.
+
+Примеры: 
+[example, HSPI]([http://vad-7.blogspot.ru/2016/04/esp8266.html])
+[example, SPI OVERLAP]([http://vad-7.blogspot.ru/2016/11/aeropac-sn-co2-az-7798-uart.html])
+
+Schematic HSPI: 
 ![SCH](https://github.com/vad7/nrf24l01_esp8266/blob/master/esp8266-nrf24l01.jpg)
+
+Schematic SPI OVERLAP: 
+![SCH](https://github.com/vad7/nrf24l01_esp8266/blob/master/nRF24L01_SPI_OVERLAP.jpg)
+
 
 ![alt tag](https://github.com/vad7/nrf24l01_esp8266/blob/master/nRF24L01.jpg)
 
@@ -13,4 +23,5 @@ Schematic:
 Используется HSPI (GPIO12..15), драйвер HSPI поддерживает блочное чтение, запись (максимум 64 байт), дуплекс. 
 Можно включить режим одновременного приема - передачи по 1 байту (SPI_TINY).
 
-Пример: [example](https://github.com/vad7/WirelessCO2_esp8266/blob/master/app/user/wireless_co2.c)
+
+Еще здесь: ([http://vad-7.blogspot.ru](http://vad-7.blogspot.ru))
